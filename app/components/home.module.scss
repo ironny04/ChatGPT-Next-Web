@@ -179,6 +179,13 @@
   opacity: 1;
 }
 
+@media only screen and (max-width: 600px) {
+  .chat-item-delete {
+    opacity: 0.5;
+    right: 10px;
+  }
+}
+
 .chat-item-info {
   display: flex;
   justify-content: space-between;
