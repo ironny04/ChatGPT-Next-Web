@@ -23,13 +23,7 @@ import DownloadIcon from "../icons/download.svg";
 
 import { Message, SubmitKey, useChatStore, ChatSession } from "../store";
 import { showModal, showToast } from "./ui-lib";
-import {
-  copyToClipboard,
-  downloadAs,
-  isIOS,
-  isMobileScreen,
-  selectOrCopy,
-} from "../utils";
+import { copyToClipboard, downloadAs, isMobileScreen } from "../utils";
 import Locale from "../locales";
 
 import dynamic from "next/dynamic";
@@ -94,7 +88,13 @@ export function ChatItem(props: {
         </div>
         <div className={styles["chat-item-date"]}>{props.time}</div>
       </div>
-      <div className={styles["chat-item-delete"]} onClick={props.onDelete}>
+      <div
+        className={styles["chat-item-delete"]}
+        onClick={(e) => {
+          e.stopPropagation();
+          props.onDelete?.();
+        }}
+      >
         <DeleteIcon />
       </div>
     </div>
@@ -176,6 +176,9 @@ export function PromptHints(props: {
   );
 }
 
+// keep the view pinned to the latest message only while it is near the bottom
+const BOTTOM_THRESHOLD = 100;
+
 export function Chat(props: {
   showSideBar?: () => void;
   sideBarShowing?: boolean;
@@ -241,7 +244,7 @@ export function Chat(props: {
 
   // submit user input
   const onUserSubmit = () => {
-    if (userInput.length <= 0) return;
+    if (userInput.trim().length <= 0) return;
     setIsLoading(true);
     chatStore.onUserInput(userInput).then(() => setIsLoading(false));
     setUserInput("");
@@ -262,18 +265,6 @@ export function Chat(props: {
       e.preventDefault();
     }
   };
-  const onRightClick = (e: any, message: Message) => {
-    // auto fill user input
-    if (message.role === "user") {
-      setUserInput(message.content);
-    }
-
-    // copy to clipboard
-    if (selectOrCopy(e.currentTarget, message.content)) {
-      e.preventDefault();
-    }
-  };
-
   const onResend = (botIndex: number) => {
     // find last user input message and resend
     for (let i = botIndex; i >= 0; i -= 1) {
@@ -307,7 +298,7 @@ export function Chat(props: {
         : [],
     )
     .concat(
-      userInput.length > 0
+      userInput.trim().length > 0
         ? [
             {
               role: "user",
@@ -319,26 +310,14 @@ export function Chat(props: {
         : [],
     );
 
-  // auto scroll
+  // auto scroll: follow the stream while the reader is pinned to the bottom;
+  // runs after every render so stream chunks can never outrun the follow
   useLayoutEffect(() => {
-    setTimeout(() => {
-      const dom = latestMessageRef.current;
-      const inputDom = inputRef.current;
-
-      // only scroll when input overlaped message body
-      let shouldScroll = true;
-      if (dom && inputDom) {
-        const domRect = dom.getBoundingClientRect();
-        const inputRect = inputDom.getBoundingClientRect();
-        shouldScroll = domRect.top > inputRect.top;
-      }
-
-      if (dom && autoScroll && shouldScroll) {
-        dom.scrollIntoView({
-          block: "end",
-        });
-      }
-    }, 500);
+    if (!autoScroll) return;
+    const dom = latestMessageRef.current;
+    const container = dom?.parentElement;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
   });
 
   return (
@@ -397,7 +376,16 @@ export function Chat(props: {
         </div>
       </div>
 
-      <div className={styles["chat-body"]}>
+      <div
+        className={styles["chat-body"]}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setAutoScroll(
+            el.scrollHeight - el.scrollTop - el.clientHeight <=
+              BOTTOM_THRESHOLD,
+          );
+        }}
+      >
         {messages.map((message, i) => {
           const isUser = message.role === "user";
 
@@ -452,8 +440,6 @@ export function Chat(props: {
                     <div
                       className="markdown-body"
                       style={{ fontSize: `${fontSize}px` }}
-                      onContextMenu={(e) => onRightClick(e, message)}
-                      onDoubleClickCapture={() => setUserInput(message.content)}
                     >
                       <Markdown content={message.content} />
                     </div>
@@ -487,10 +473,7 @@ export function Chat(props: {
             value={userInput}
             onKeyDown={(e) => onInputKeyDown(e as any)}
             onFocus={() => setAutoScroll(true)}
-            onBlur={() => {
-              setAutoScroll(false);
-              setTimeout(() => setPromptHints([]), 500);
-            }}
+            onBlur={() => setTimeout(() => setPromptHints([]), 500)}
             autoFocus={!props?.sideBarShowing}
           />
           <IconButton
