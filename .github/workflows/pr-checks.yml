@@ -1,0 +1,39 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+jobs:
+  lint-and-build:
+    name: lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate Next.js types
+        # next-env.d.ts is gitignored; `next lint` regenerates it as a side
+        # effect so the standalone tsc run below sees scss/svg declarations.
+        # `|| true`: lint findings must not fail this step (lint runs next).
+        run: yarn lint --file package.json || true
+
+      - name: Typecheck
+        run: ./node_modules/.bin/tsc --noEmit
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
